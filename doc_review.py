@@ -20,6 +20,10 @@ OCR_CONFIG = "--psm 6 -c preserve_interword_spaces=1"
 MAX_PAGES_TO_PROCESS = 3  # Process first 3 pages for efficiency
 DocType = Literal["INE", "PASSPORT", "CURP", "UNKNOWN"]
 
+# If you don't want to pass the path in the command line,
+# set it here and just run: `python3 doc_review.py`
+DEFAULT_INPUT_PATH = "files/Vertical ID.jpeg"
+
 
 class ExtractionResult(TypedDict):
     """Type definition for extraction result."""
@@ -414,7 +418,13 @@ def main():
     parser = argparse.ArgumentParser(
         description="Extract the person's name from INE / Passport / CURP and suggest a filename."
     )
-    parser.add_argument("path", type=str, help="Path to an image (jpg/png) or PDF.")
+    parser.add_argument(
+        "path",
+        type=str,
+        nargs="?",
+        default=DEFAULT_INPUT_PATH,
+        help=f"Path to an image (jpg/png) or PDF. Default: {DEFAULT_INPUT_PATH}",
+    )
     parser.add_argument(
         "--max-pages",
         type=int,

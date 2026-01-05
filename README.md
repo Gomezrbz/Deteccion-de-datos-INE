@@ -25,7 +25,13 @@ System deps:
 
 ## Usage
 
-Print the suggested filename:
+Set your input file path inside `doc_review.py` (variable `DEFAULT_INPUT_PATH`), then run:
+
+```bash
+python3 doc_review.py
+```
+
+Optional: override the path via CLI:
 
 ```bash
 python3 doc_review.py "path/to/document.jpg"
