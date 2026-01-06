@@ -1,3 +1,6 @@
 # Virtual environments
 env/
 files/
+
+# Test data
+data_testing/

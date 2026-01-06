@@ -4,7 +4,6 @@ from pathlib import Path
 from methods import (
     check_tesseract_installed,
     get_name_from_path,
-    DEFAULT_INPUT_PATH,
     MAX_PAGES_TO_PROCESS,
 )
 
@@ -15,11 +14,9 @@ def main():
         description="Extract the person's name from INE / Passport / CURP and suggest a filename."
     )
     parser.add_argument(
-        "path",
+        "file_path",
         type=str,
-        nargs="?",
-        default=DEFAULT_INPUT_PATH,
-        help=f"Path to an image (jpg/png) or PDF. Default: {DEFAULT_INPUT_PATH}",
+        help="Path to an image (jpg/png) or PDF file to review.",
     )
     parser.add_argument(
         "--max-pages",
@@ -34,6 +31,17 @@ def main():
     )
     args = parser.parse_args()
 
+    # Validate file path
+    file_path = Path(args.file_path)
+    
+    if not file_path.exists():
+        print(f"Error: File '{file_path}' not found.", file=sys.stderr)
+        sys.exit(2)
+    
+    if not file_path.is_file():
+        print(f"Error: '{file_path}' is not a file.", file=sys.stderr)
+        sys.exit(2)
+
     # Check if Tesseract is installed before processing
     if not check_tesseract_installed():
         print(
@@ -41,15 +49,12 @@ def main():
             "Install on Ubuntu/Debian:\n"
             "  sudo apt-get update && sudo apt-get install -y tesseract-ocr tesseract-ocr-spa\n\n"
             "Install on macOS:\n"
-            "  brew install tesseract tesseract-lang\n",
+            "  brew install tesseract tesseract-lang\n\n"
+            "Install on Windows:\n"
+            "  Download from: https://github.com/UB-Mannheim/tesseract/wiki",
             file=sys.stderr,
         )
         sys.exit(1)
-
-    file_path = Path(args.path)
-    if not file_path.exists():
-        print(f"Error: File '{file_path}' not found.", file=sys.stderr)
-        sys.exit(2)
 
     try:
         result = get_name_from_path(file_path, max_pages=args.max_pages)

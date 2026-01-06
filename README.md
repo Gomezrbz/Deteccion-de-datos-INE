@@ -45,27 +45,13 @@ sudo apt-get install -y tesseract-ocr tesseract-ocr-spa
 brew install tesseract tesseract-lang
 ```
 
-> **Note:** PDF processing is handled by PyMuPDF (a pure Python library), so no additional system dependencies like Poppler are required.
+git co> **Note:** PDF processing is handled by PyMuPDF (a pure Python library), so no additional system dependencies like Poppler are required.
 
 ## Usage
 
-### Quick Start
+### Basic Usage
 
-Set your input file path inside `methods.py` (variable `DEFAULT_INPUT_PATH`), then run:
-
-**Windows:**
-```powershell
-python doc_review.py
-```
-
-**Linux/macOS:**
-```bash
-python3 doc_review.py
-```
-
-### Command Line Options
-
-Override the path via CLI:
+The script requires a file path as an argument. Provide the path to an image (jpg/png) or PDF file:
 
 **Windows:**
 ```powershell
@@ -77,6 +63,8 @@ python doc_review.py "path\to\document.jpg"
 python3 doc_review.py "path/to/document.jpg"
 ```
 
+### Command Line Options
+
 Include debug output (doc type, extracted name, OCR text):
 
 **Windows:**
@@ -87,6 +75,18 @@ python doc_review.py "path\to\document.jpg" --print-text
 **Linux/macOS:**
 ```bash
 python3 doc_review.py "path/to/document.jpg" --print-text
+```
+
+Limit the number of PDF pages to process (default: 3):
+
+**Windows:**
+```powershell
+python doc_review.py "path\to\document.pdf" --max-pages 5
+```
+
+**Linux/macOS:**
+```bash
+python3 doc_review.py "path/to/document.pdf" --max-pages 5
 ```
 
 ### Testing on Different Platforms
