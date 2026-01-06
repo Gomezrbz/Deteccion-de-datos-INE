@@ -7,7 +7,7 @@ import cv2
 import numpy as np
 import pytesseract
 from PIL import Image
-from pdf2image import convert_from_bytes
+import fitz  # PyMuPDF
 
 # Constants
 SUPPORTED_IMAGE_EXTS = {"jpg", "jpeg", "png"}
@@ -372,22 +372,45 @@ def get_name_from_file(file_bytes: bytes, filename: str, max_pages: int = MAX_PA
     elif ext == SUPPORTED_PDF_EXT:
         # Process PDF (limit pages for efficiency)
         try:
-            images = convert_from_bytes(file_bytes, dpi=PDF_DPI)
+            # Open PDF from bytes using PyMuPDF
+            doc = fitz.open(stream=file_bytes, filetype="pdf")
+            total_pages = len(doc)
+            
+            # Calculate zoom factor for desired DPI (72 is default DPI)
+            zoom = PDF_DPI / 72.0
+            matrix = fitz.Matrix(zoom, zoom)
+            
             # Process only first N pages for efficiency
-            pages_to_process = min(len(images), max_pages)
+            pages_to_process = min(total_pages, max_pages)
+            images = []
+            
+            for page_num in range(pages_to_process):
+                page = doc[page_num]
+                pix = page.get_pixmap(matrix=matrix)
+                # Convert to PIL Image
+                img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+                images.append(img)
             
             # Use list comprehension and join for better performance
-            text_parts = [ocr_image(img) for img in images[:pages_to_process]]
+            text_parts = [ocr_image(img) for img in images]
             full_text = "\n".join(text_parts)
             
             # If name not found in first pages and we have more pages, process remaining
             doc_type_first = detect_document_type(full_text)
             name_first = extract_name_best(full_text, doc_type_first)
-            if name_first is None and len(images) > pages_to_process:
+            if name_first is None and total_pages > pages_to_process:
+                remaining_images = []
+                for page_num in range(pages_to_process, total_pages):
+                    page = doc[page_num]
+                    pix = page.get_pixmap(matrix=matrix)
+                    img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+                    remaining_images.append(img)
                 remaining_text = "\n".join(
-                    ocr_image(img) for img in images[pages_to_process:]
+                    ocr_image(img) for img in remaining_images
                 )
                 full_text += "\n" + remaining_text
+            
+            doc.close()
             
         except Exception as e:
             raise ValueError(f"Failed to process PDF: {e}") from e

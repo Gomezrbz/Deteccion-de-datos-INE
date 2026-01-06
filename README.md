@@ -45,22 +45,7 @@ sudo apt-get install -y tesseract-ocr tesseract-ocr-spa
 brew install tesseract tesseract-lang
 ```
 
-#### Poppler (required only for PDF processing)
-
-**Windows:**
-1. Download Poppler for Windows from: https://github.com/oschwartz10612/poppler-windows/releases/
-2. Extract the archive and add the `bin` folder to your system PATH
-3. Or use Chocolatey: `choco install poppler`
-
-**Linux (Ubuntu/Debian):**
-```bash
-sudo apt-get install -y poppler-utils
-```
-
-**macOS:**
-```bash
-brew install poppler
-```
+> **Note:** PDF processing is handled by PyMuPDF (a pure Python library), so no additional system dependencies like Poppler are required.
 
 ## Usage
 
@@ -109,5 +94,6 @@ python3 doc_review.py "path/to/document.jpg" --print-text
 The script works identically across Windows, Linux, and macOS. Make sure:
 - Python 3.7+ is installed
 - Tesseract OCR is installed and accessible in your PATH
-- Poppler is installed (if you plan to process PDF files)
 - All Python dependencies are installed via `pip install -r requirements.txt`
+
+> **Note:** PDF processing uses PyMuPDF (pure Python), so no system dependencies like Poppler are needed.
