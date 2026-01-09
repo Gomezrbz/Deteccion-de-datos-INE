@@ -1,6 +1,7 @@
 # Virtual environments
 env/
 files/
+__pycache__
 
 # Test data
 data_testing/
