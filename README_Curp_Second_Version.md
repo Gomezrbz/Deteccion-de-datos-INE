@@ -4,7 +4,7 @@ This script extracts person names from CURP (Clave Única de Registro de Poblaci
 
 ## Overview
 
-The CURP second version document has a specific format where the name appears in a predictable pattern:
+The CURP document has a specific format where the name appears in a predictable pattern:
 - A line containing numbers (typically a barcode number)
 - The person's name on the next line
 - A line starting with "PRESENTE" on the following line
