@@ -5,6 +5,8 @@ __pycache__
 
 # Test data
 data_testing/
+INE/
+Copy_code/
 
 # Docs Training
 docs_training/
