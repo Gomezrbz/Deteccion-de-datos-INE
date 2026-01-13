@@ -54,7 +54,7 @@ def main():
             # Determine output file path (same directory as input file, named output.txt.txt)
             input_path = Path(image_path)
             output_dir = input_path.parent
-            output_file = output_dir / "output.txt.txt"
+            output_file = output_dir / "output"
             
             # Build tesseract command
             # Format: tesseract input_file output_base -l spa+eng
@@ -65,7 +65,7 @@ def main():
             # Run tesseract command (matching manual command exactly)
             #cmd = "tesseract data_testing/PNG/CURP/CURP_Raul.png output"
 
-            command = "tesseract data_testing/PNG/CURP/CURP_Raul.png data_testing\PNG\CURP\output"
+            command = "tesseract" + " " + str(input_path) + " " + str(output_file)
             result_tesseract = subprocess.run(command, shell=True, check=True)
 
            
