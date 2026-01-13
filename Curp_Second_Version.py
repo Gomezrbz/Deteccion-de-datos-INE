@@ -9,17 +9,17 @@ Configure the variables below to specify document type, path, and expected name.
 import subprocess
 import sys
 from pathlib import Path
-from utils import process_document, process_text_file, check_tesseract_installed
+from utils import process_document, process_text_file, check_tesseract_installed, manage_output_file
 
 # Configuration variables
 use_text_file = False  # Set to True to process text file directly (faster), False to process image/PDF
 type_document = "PNG"  # Can be "PNG", "PDF", or "JPEG" (only used if use_text_file = False)
 #image_path = "data_testing/PNG/CURP/Diego_CURP.png"  # Path to the image/PDF file (only used if use_text_file = False)
-image_path = "data_testing/PNG/CURP/CURP_Raul.png"  # Path to the image/PDF file (only used if use_text_file = False)
+image_path = "data_testing/PNG/CURP/Diego_CURP.png"  # Path to the image/PDF file (only used if use_text_file = False)
 
 text_file_path = "data_testing/PNG/CURP/output.txt"  # Path to the text file (only used if use_text_file = True)
-name_expected = "RAUL GOMEZ BERMUDEZ"  # Expected name to be extracted
-curp_expected = "GOBR940325HDFMRLO3"  # Expected CURP/Clave to be extracted
+name_expected = "Diego Armando Gutierrez Campos"  # Expected name to be extracted
+curp_expected = "GUCD941008HDFTMG03"  # Expected CURP/Clave to be extracted
 
 
 def main():
@@ -48,10 +48,10 @@ def main():
             # Check if tesseract is installed
             if not check_tesseract_installed():
                 print("ERROR: Tesseract OCR is not installed or not in PATH.")
-                print("Cannot generate output.txt.txt file.")
+                print("Cannot generate output.txt file.")
                 return 1
             
-            # Determine output file path (same directory as input file, named output.txt.txt)
+            # Determine output file path (same directory as input file, named output.txt)
             input_path = Path(image_path)
             output_dir = input_path.parent
             output_file = output_dir / "output"
@@ -70,13 +70,8 @@ def main():
 
            
             if result_tesseract.returncode == 0:
-                # Tesseract creates output.txt (because we gave it "output" as base)
-                # Now rename it to output.txt.txt
-                tesseract_output = output_base.with_suffix('.txt')  # This will be output.txt
-                if tesseract_output.exists():
-                    print(f"✓ Generated output.txt.txt at: {output_file}")
-                else:
-                    print(f"⚠ Warning: Tesseract completed but output.txt not found at: {tesseract_output}")
+                # Tesseract creates output.txt (because we gave it "output" as base
+                    print(f"✓ Generated output.txt: {output_file}")
             else:
                 print(f"⚠ Warning: Tesseract command returned error code {result_tesseract.returncode}")
                 if result_tesseract.stderr:
@@ -97,8 +92,7 @@ def main():
             print()
     
     # Process document or text file
-        result = process_text_file(text_file_path, name_expected, curp_expected)
-        # To deleteresult = process_document(type_document, image_path, name_expected, curp_expected)
+    result = process_text_file(text_file_path, name_expected, curp_expected)
     
     # Display results
     if result['error']:
@@ -155,6 +149,13 @@ def main():
     print(f"  Name extraction time: {timing['name_extraction']:.3f} seconds")
     print(f"  Total processing time: {timing['total']:.3f} seconds")
     print()
+    
+    # Get match status from result
+    curp_match = result.get('curp_match', False)
+    name_match = result.get('name_match', False)
+    
+    # Manage output file (delete if both match, rename if not)
+    manage_output_file(str(text_file_path), curp_match, name_match)
     
     if result['success']:
         print("Processing completed successfully!")

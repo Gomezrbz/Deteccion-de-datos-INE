@@ -89,7 +89,7 @@ def _normalize_text(s: str) -> str:
 def _preprocess_for_ocr(img_array: np.ndarray, mode: str) -> np.ndarray:
     """
     Preprocess OpenCV image array for OCR with enhanced preprocessing.
-    mode: 'binarize' (Otsu), 'adapt' (adaptive threshold), 'enhanced' (multiple enhancements)
+    mode: 'binarize' (Otsu), 'enhanced' (multiple enhancements)
     """
     # Convert to grayscale if needed
     if len(img_array.shape) == 3:
@@ -114,20 +114,8 @@ def _preprocess_for_ocr(img_array: np.ndarray, mode: str) -> np.ndarray:
         _, binary = cv2.threshold(sharpened, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
         return binary
     
-    # Original preprocessing methods
-    # Mild denoise
+    # Fallback: Otsu binarization (used when enhanced mode fails)
     gray = cv2.GaussianBlur(gray, (3, 3), 0)
-    
-    if mode == "adapt":
-        return cv2.adaptiveThreshold(
-            gray,
-            255,
-            cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
-            cv2.THRESH_BINARY,
-            31,
-            2,
-        )
-    # Default: Otsu binarization
     _, binary = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
     return binary
 
@@ -182,24 +170,19 @@ def _ocr_image_fast(image: Image.Image) -> str:
 
 def ocr_image(image: Image.Image, fast_mode: bool = False) -> str:
     """
-    OCR with rotation attempts (useful for sideways photos).
+    OCR for documents using fast mode.
     
     Args:
         image: PIL Image object
-        fast_mode: If True, skip rotations and use fewer preprocessing attempts (faster)
+        fast_mode: If True, use fast preprocessing (always True in our usage)
     """
-    if fast_mode:
-        # Fast mode: single attempt with best preprocessing
-        try:
-            return _ocr_image_fast(image)
-        except RuntimeError:
-            raise
-        except Exception:
-            return ""
-    
-    # Standard mode: try multiple rotations (not used when fast_mode=True)
-    # This code is kept for backward compatibility but won't be executed in our test
-    return ""
+    # Fast mode: single attempt with best preprocessing
+    try:
+        return _ocr_image_fast(image)
+    except RuntimeError:
+        raise
+    except Exception:
+        return ""
 
 def _fix_common_ocr_errors(text: str) -> str:
     """
@@ -380,7 +363,6 @@ def extract_curp_from_text(text: str, debug: bool = False) -> Optional[str]:
     
     return None
 
-
 def extract_name_curp_second_version(text: str) -> Optional[str]:
     """
     Extract name from CURP second version document.
@@ -432,7 +414,6 @@ def extract_name_curp_second_version(text: str) -> Optional[str]:
     
     return None
 
-
 def process_pdf(pdf_path: str) -> Image.Image:
     """
     Convert first page of PDF to PIL Image.
@@ -476,7 +457,6 @@ def process_pdf(pdf_path: str) -> Image.Image:
         return img
     except Exception as e:
         raise ValueError(f"Failed to process PDF: {e}") from e
-
 
 def process_text_file(text_file_path: str, name_expected: str, curp_expected: str = None) -> Dict:
     """
@@ -564,6 +544,58 @@ def process_text_file(text_file_path: str, name_expected: str, curp_expected: st
     
     return result
 
+
+def manage_output_file(output_file_path: str, curp_match: bool, name_match: bool) -> None:
+    """
+    Manage output file based on extraction results.
+    
+    If both CURP and Name match: delete the output file.
+    If either doesn't match: rename the output file to error_output_file.
+    
+    Args:
+        output_file_path: Path to the output file (e.g., output.txt)
+        curp_match: Boolean indicating if CURP matches expected
+        name_match: Boolean indicating if name matches expected
+    """
+    output_path = Path(output_file_path)
+    
+    if not output_path.exists():
+        print(f"⚠ Output file not found: {output_path}")
+        return
+    
+    both_match = curp_match and name_match
+    
+    print("=" * 80)
+    print("Output File Management")
+    print("=" * 80)
+    
+    if both_match:
+        # Both match - delete the output file
+        try:
+            output_path.unlink()
+            print(f"✓ Output file deleted (both CURP and Name matched): {output_path}")
+        except Exception as e:
+            print(f"✗ Error deleting output file: {e}")
+    else:
+        # One or both don't match - rename to error_output_file
+        try:
+            # Preserve file extension
+            file_extension = output_path.suffix
+            error_file = output_path.parent / f"error_output_file{file_extension}"
+            
+            # If error file already exists, add a number
+            counter = 1
+            while error_file.exists():
+                error_file = output_path.parent / f"error_output_file_{counter}{file_extension}"
+                counter += 1
+            
+            output_path.rename(error_file)
+            print(f"✓ Output file renamed (CURP or Name mismatch): {output_path.name} -> {error_file.name}")
+        except Exception as e:
+            print(f"✗ Error renaming output file: {e}")
+    
+    print("=" * 80)
+    print()
 
 def process_document(type_document: str, image_path: str, name_expected: str, curp_expected: str = None) -> Dict:
     """
