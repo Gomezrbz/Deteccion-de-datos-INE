@@ -2,6 +2,7 @@ import re
 import sys
 import time
 import unicodedata
+from datetime import date, datetime
 from pathlib import Path
 from typing import Optional, Dict
 import cv2
@@ -363,6 +364,63 @@ def extract_curp_from_text(text: str, debug: bool = False) -> Optional[str]:
     
     return None
 
+
+_CURP_RE = re.compile(r"^[A-Z]{4}\d{6}[A-Z]{6}\d{2}$", re.IGNORECASE)
+
+
+def dob_from_curp(curp: str) -> date:
+    """
+    Extract DOB from CURP and return a datetime.date.
+
+    CURP format includes DOB as YYMMDD starting at position 4 (0-based).
+    Century is inferred using a pivot rule based on the current year:
+    - if YY > current_YY -> 1900s
+    - else -> 2000s
+    
+    Args:
+        curp: CURP string (18 characters)
+        
+    Returns:
+        datetime.date object with the date of birth
+        
+    Raises:
+        ValueError: If CURP format is invalid
+    """
+    curp = curp.strip().upper()
+
+    # Basic validation (keeps it practical; CURP has more rules, but this is enough for DOB extraction)
+    if not _CURP_RE.match(curp):
+        raise ValueError(f"Invalid CURP format: {curp}")
+
+    yymmdd = curp[4:10]  # YYMMDD
+    yy = int(yymmdd[0:2])
+    mm = int(yymmdd[2:4])
+    dd = int(yymmdd[4:6])
+
+    current_yy = int(datetime.now().strftime("%y"))
+    year = (1900 + yy) if yy > current_yy else (2000 + yy)
+
+    # Validates real dates too (e.g., rejects 990231)
+    return date(year, mm, dd)
+
+
+def dob_from_curp_str(curp: str) -> Optional[str]:
+    """
+    Returns DOB as 'DD/MM/YYYY' string, or None if CURP is invalid.
+    
+    Args:
+        curp: CURP string
+        
+    Returns:
+        Date of birth as 'DD/MM/YYYY' string, or None if extraction fails
+    """
+    try:
+        d = dob_from_curp(curp)
+        return d.strftime("%d/%m/%Y")
+    except (ValueError, IndexError, TypeError):
+        return None
+
+
 def extract_name_curp_second_version(text: str) -> Optional[str]:
     """
     Extract name from CURP second version document.
@@ -458,7 +516,7 @@ def process_pdf(pdf_path: str) -> Image.Image:
     except Exception as e:
         raise ValueError(f"Failed to process PDF: {e}") from e
 
-def process_text_file(text_file_path: str, name_expected: str, curp_expected: str = None) -> Dict:
+def process_text_file(text_file_path: str, name_expected: str, curp_expected: str = None, dob_expected: str = None) -> Dict:
     """
     Process a text file directly (faster than OCR).
     This is useful when you already have the OCR output from tesseract command.
@@ -467,13 +525,16 @@ def process_text_file(text_file_path: str, name_expected: str, curp_expected: st
         text_file_path: Path to the text file (e.g., output.txt.txt from tesseract)
         name_expected: Expected name for validation
         curp_expected: Expected CURP/Clave for validation (optional)
+        dob_expected: Expected date of birth in 'DD/MM/YYYY' format (optional)
         
     Returns:
         Dictionary containing:
             - 'curp': Extracted CURP/Clave (or None)
             - 'name': Extracted name (or None)
+            - 'dob': Extracted date of birth in 'DD/MM/YYYY' format (or None)
             - 'name_match': Boolean indicating if extracted name matches expected
             - 'curp_match': Boolean indicating if extracted CURP matches expected
+            - 'dob_match': Boolean indicating if extracted DOB matches expected
             - 'timing': Dictionary with timing information
             - 'success': Boolean indicating overall success
             - 'error': Error message if any (or None)
@@ -482,6 +543,7 @@ def process_text_file(text_file_path: str, name_expected: str, curp_expected: st
     timing = {
         'file_load': 0.0,
         'curp_extraction': 0.0,
+        'dob_extraction': 0.0,
         'name_extraction': 0.0,
         'total': 0.0
     }
@@ -489,8 +551,10 @@ def process_text_file(text_file_path: str, name_expected: str, curp_expected: st
     result = {
         'curp': None,
         'name': None,
+        'dob': None,
         'name_match': False,
         'curp_match': False,
+        'dob_match': False,
         'timing': timing,
         'success': False,
         'error': None
@@ -521,6 +585,18 @@ def process_text_file(text_file_path: str, name_expected: str, curp_expected: st
             curp_normalized = curp.upper().strip()
             expected_normalized = curp_expected.upper().strip()
             result['curp_match'] = curp_normalized == expected_normalized
+        
+        # Extract DOB from CURP
+        dob_start = time.perf_counter()
+        dob = None
+        if curp:
+            dob = dob_from_curp_str(curp)
+        timing['dob_extraction'] = time.perf_counter() - dob_start
+        result['dob'] = dob
+        
+        # Check if DOB matches expected
+        if dob and dob_expected:
+            result['dob_match'] = dob == dob_expected
         
         # Extract name
         name_start = time.perf_counter()
@@ -597,7 +673,7 @@ def manage_output_file(output_file_path: str, curp_match: bool, name_match: bool
     print("=" * 80)
     print()
 
-def process_document(type_document: str, image_path: str, name_expected: str, curp_expected: str = None) -> Dict:
+def process_document(type_document: str, image_path: str, name_expected: str, curp_expected: str = None, dob_expected: str = None) -> Dict:
     """
     Main function to process a document and extract CURP and name.
     
@@ -606,13 +682,16 @@ def process_document(type_document: str, image_path: str, name_expected: str, cu
         image_path: Path to the document file
         name_expected: Expected name for validation
         curp_expected: Expected CURP/Clave for validation (optional)
+        dob_expected: Expected date of birth in 'DD/MM/YYYY' format (optional)
         
     Returns:
         Dictionary containing:
             - 'curp': Extracted CURP/Clave (or None)
             - 'name': Extracted name (or None)
+            - 'dob': Extracted date of birth in 'DD/MM/YYYY' format (or None)
             - 'name_match': Boolean indicating if extracted name matches expected
             - 'curp_match': Boolean indicating if extracted CURP matches expected
+            - 'dob_match': Boolean indicating if extracted DOB matches expected
             - 'timing': Dictionary with timing information
             - 'success': Boolean indicating overall success
             - 'error': Error message if any (or None)
@@ -622,6 +701,7 @@ def process_document(type_document: str, image_path: str, name_expected: str, cu
         'file_load': 0.0,
         'ocr': 0.0,
         'curp_extraction': 0.0,
+        'dob_extraction': 0.0,
         'name_extraction': 0.0,
         'total': 0.0
     }
@@ -629,8 +709,10 @@ def process_document(type_document: str, image_path: str, name_expected: str, cu
     result = {
         'curp': None,
         'name': None,
+        'dob': None,
         'name_match': False,
         'curp_match': False,
+        'dob_match': False,
         'timing': timing,
         'success': False,
         'error': None
@@ -705,6 +787,18 @@ def process_document(type_document: str, image_path: str, name_expected: str, cu
             curp_normalized = curp.upper().strip()
             expected_normalized = curp_expected.upper().strip()
             result['curp_match'] = curp_normalized == expected_normalized
+        
+        # Extract DOB from CURP
+        dob_start = time.perf_counter()
+        dob = None
+        if curp:
+            dob = dob_from_curp_str(curp)
+        timing['dob_extraction'] = time.perf_counter() - dob_start
+        result['dob'] = dob
+        
+        # Check if DOB matches expected
+        if dob and dob_expected:
+            result['dob_match'] = dob == dob_expected
         
         # Extract name
         name_start = time.perf_counter()

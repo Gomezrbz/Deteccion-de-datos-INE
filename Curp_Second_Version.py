@@ -20,6 +20,7 @@ image_path = "data_testing/PNG/CURP/Diego_CURP.png"  # Path to the image/PDF fil
 text_file_path = "data_testing/PNG/CURP/output.txt"  # Path to the text file (only used if use_text_file = True)
 name_expected = "Diego Armando Gutierrez Campos"  # Expected name to be extracted
 curp_expected = "GUCD941008HDFTMG03"  # Expected CURP/Clave to be extracted
+dob_expected = "08/10/1994"  # Expected date of birth in DD/MM/YYYY format
 
 
 def main():
@@ -38,6 +39,7 @@ def main():
     
     print(f"Expected name: {name_expected}")
     print(f"Expected CURP: {curp_expected}")
+    print(f"Expected DOB:  {dob_expected}")
     print("=" * 80)
     print()
     
@@ -92,7 +94,7 @@ def main():
             print()
     
     # Process document or text file
-    result = process_text_file(text_file_path, name_expected, curp_expected)
+    result = process_text_file(text_file_path, name_expected, curp_expected, dob_expected)
     
     # Display results
     if result['error']:
@@ -105,14 +107,17 @@ def main():
     print("=" * 80)
     extracted_curp = result['curp'] or 'Not found'
     extracted_name = result['name'] or 'Not found'
+    extracted_dob = result.get('dob') or 'Not found'
     print(f"CURP/Clave: {extracted_curp}")
     print(f"Name:       {extracted_name}")
+    print(f"DOB:        {extracted_dob}")
     print("=" * 80)
     print()
     
     print("Results:")
     print(f"  CURP/Clave: {extracted_curp}")
     print(f"  Name: {extracted_name}")
+    print(f"  DOB: {extracted_dob}")
     print()
     
     # Display CURP match status
@@ -139,6 +144,18 @@ def main():
             print(f"  Got: {result['name']}")
     print()
     
+    # Display DOB match status
+    if result.get('dob') and dob_expected:
+        if result.get('dob_match', False):
+            print("✓ DOB matches expected result")
+            print(f"  Expected: {dob_expected}")
+            print(f"  Got: {result['dob']}")
+        else:
+            print("✗ DOB does not match expected result")
+            print(f"  Expected: {dob_expected}")
+            print(f"  Got: {result['dob']}")
+    print()
+    
     # Display timing information
     print("Timing Information:")
     timing = result['timing']
@@ -146,6 +163,8 @@ def main():
     if 'ocr' in timing:
         print(f"  OCR time: {timing['ocr']:.3f} seconds")
     print(f"  CURP extraction time: {timing['curp_extraction']:.3f} seconds")
+    if 'dob_extraction' in timing:
+        print(f"  DOB extraction time: {timing['dob_extraction']:.3f} seconds")
     print(f"  Name extraction time: {timing['name_extraction']:.3f} seconds")
     print(f"  Total processing time: {timing['total']:.3f} seconds")
     print()
