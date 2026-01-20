@@ -2,18 +2,14 @@ import re
 import sys
 import time
 import unicodedata
+import os
 from datetime import date, datetime
 from pathlib import Path
-from typing import Optional, Dict
-import cv2
-import numpy as np
+from typing import Optional, Dict, List
 import pytesseract
-from PIL import Image
-import fitz  # PyMuPDF
+from PIL import Image, ImageEnhance, ImageFilter
+from pdf2image import convert_from_path
 
-# Constants
-OCR_LANG = "spa+eng"
-OCR_CONFIG = "--psm 6 -c preserve_interword_spaces=1"
 
 def _find_tesseract_executable() -> Optional[str]:
     """
@@ -86,104 +82,6 @@ def _normalize_text(s: str) -> str:
     s = _strip_accents(s).upper()
     s = re.sub(r"[ \t]+", " ", s)
     return s
-
-def _preprocess_for_ocr(img_array: np.ndarray, mode: str) -> np.ndarray:
-    """
-    Preprocess OpenCV image array for OCR with enhanced preprocessing.
-    mode: 'binarize' (Otsu), 'enhanced' (multiple enhancements)
-    """
-    # Convert to grayscale if needed
-    if len(img_array.shape) == 3:
-        gray = cv2.cvtColor(img_array, cv2.COLOR_BGR2GRAY)
-    else:
-        gray = img_array.copy()
-    
-    # Enhanced preprocessing for better OCR
-    if mode == "enhanced":
-        # Step 1: Denoise
-        denoised = cv2.fastNlMeansDenoising(gray, None, 10, 7, 21)
-        
-        # Step 2: Enhance contrast using CLAHE (Contrast Limited Adaptive Histogram Equalization)
-        clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
-        enhanced = clahe.apply(denoised)
-        
-        # Step 3: Sharpen
-        kernel = np.array([[-1, -1, -1], [-1, 9, -1], [-1, -1, -1]])
-        sharpened = cv2.filter2D(enhanced, -1, kernel)
-        
-        # Step 4: Binarize
-        _, binary = cv2.threshold(sharpened, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-        return binary
-    
-    # Fallback: Otsu binarization (used when enhanced mode fails)
-    gray = cv2.GaussianBlur(gray, (3, 3), 0)
-    _, binary = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-    return binary
-
-def _ocr_image_fast(image: Image.Image) -> str:
-    """
-    Fast OCR for documents that are known to be upright (like CURP).
-    Uses single preprocessing method and single OCR config for speed.
-    """
-    # Convert PIL → OpenCV
-    img_array = np.array(image)
-    
-    # Convert to grayscale based on image mode
-    if image.mode == 'L':
-        gray = img_array
-    elif image.mode == 'RGBA':
-        bgr = cv2.cvtColor(img_array, cv2.COLOR_RGBA2BGR)
-        gray = cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY)
-    elif image.mode == 'RGB':
-        gray = cv2.cvtColor(img_array, cv2.COLOR_RGB2GRAY)
-    else:
-        # Other modes: convert to RGB first
-        rgb_image = image.convert('RGB')
-        rgb_array = np.array(rgb_image)
-        gray = cv2.cvtColor(rgb_array, cv2.COLOR_RGB2GRAY)
-    
-    # Use only the best preprocessing method (enhanced) and single OCR config
-    try:
-        processed = _preprocess_for_ocr(gray, mode="enhanced")
-        processed_img = Image.fromarray(processed)
-        text = pytesseract.image_to_string(processed_img, lang=OCR_LANG, config=OCR_CONFIG)
-        return text if text.strip() else ""
-    except pytesseract.TesseractNotFoundError:
-        error_msg = (
-            "Tesseract OCR is not installed or not in your PATH.\n\n"
-            "To install on Ubuntu/Debian:\n"
-            "  sudo apt-get update && sudo apt-get install -y tesseract-ocr tesseract-ocr-spa\n\n"
-            "To install on macOS:\n"
-            "  brew install tesseract tesseract-lang\n\n"
-            "More info: https://github.com/tesseract-ocr/tesseract/wiki\n"
-            "Make sure to add Tesseract to your PATH after installation."
-        )
-        raise RuntimeError(error_msg) from None
-    except Exception:
-        # Fallback to simple binarization if enhanced fails
-        try:
-            processed = _preprocess_for_ocr(gray, mode="binarize")
-            processed_img = Image.fromarray(processed)
-            text = pytesseract.image_to_string(processed_img, lang=OCR_LANG, config=OCR_CONFIG)
-            return text if text.strip() else ""
-        except Exception:
-            return ""
-
-def ocr_image(image: Image.Image, fast_mode: bool = False) -> str:
-    """
-    OCR for documents using fast mode.
-    
-    Args:
-        image: PIL Image object
-        fast_mode: If True, use fast preprocessing (always True in our usage)
-    """
-    # Fast mode: single attempt with best preprocessing
-    try:
-        return _ocr_image_fast(image)
-    except RuntimeError:
-        raise
-    except Exception:
-        return ""
 
 def _fix_common_ocr_errors(text: str) -> str:
     """
@@ -472,49 +370,90 @@ def extract_name_curp_second_version(text: str) -> Optional[str]:
     
     return None
 
-def process_pdf(pdf_path: str) -> Image.Image:
+
+def pdf_to_png(pdf_path: str, dpi: int = 400) -> List[str]:
     """
-    Convert first page of PDF to PIL Image.
-    
+    Converts a PDF into PNG images with enhanced preprocessing for better OCR.
+    One PNG per page.
+    Saves images in the same directory as the PDF.
+
     Args:
         pdf_path: Path to the PDF file
+        dpi: DPI for conversion (default 400, increased for better OCR quality)
         
     Returns:
-        PIL Image of the first page
+        List of generated PNG paths
         
     Raises:
-        FileNotFoundError: If the PDF file doesn't exist
-        ValueError: If the PDF cannot be opened or processed
+        ValueError: If file is not a PDF
+        FileNotFoundError: If PDF file doesn't exist
+        RuntimeError: If poppler is not installed
     """
-    path = Path(pdf_path)
-    if not path.exists():
-        raise FileNotFoundError(f"PDF file not found: {pdf_path}")
-    
+    if not pdf_path.lower().endswith(".pdf"):
+        raise ValueError("Only PDF files are supported.")
+    if not os.path.exists(pdf_path):
+        raise FileNotFoundError(f"File not found: {pdf_path}")
+
+    directory, filename = os.path.split(pdf_path)
+    name, _ = os.path.splitext(filename)
+
     try:
-        # Open PDF
-        pdf_document = fitz.open(pdf_path)
-        
-        if len(pdf_document) == 0:
-            pdf_document.close()
-            raise ValueError("PDF file is empty")
-        
-        # Get first page
-        first_page = pdf_document[0]
-        
-        # Render page to image (pixmap)
-        # Use a reasonable DPI for OCR (300 DPI is good)
-        mat = fitz.Matrix(300/72, 300/72)  # 300 DPI scaling
-        pix = first_page.get_pixmap(matrix=mat)
-        
-        # Convert pixmap to PIL Image
-        img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
-        
-        # Close PDF
-        pdf_document.close()
-        
-        return img
+        # Convert PDF to images with higher DPI for better quality
+        pages = convert_from_path(pdf_path, dpi=dpi)
     except Exception as e:
-        raise ValueError(f"Failed to process PDF: {e}") from e
+        error_msg = str(e)
+        if "poppler" in error_msg.lower() or "Unable to get page count" in error_msg:
+            poppler_instructions = (
+                "\n\n" + "=" * 80 + "\n"
+                "ERROR: Poppler is not installed or not in PATH.\n"
+                "pdf2image requires Poppler to convert PDF files.\n\n"
+                "To install Poppler:\n"
+                "  Windows: Download from https://github.com/oschwartz10612/poppler-windows/releases/\n"
+                "           Extract and add the 'bin' folder to your PATH environment variable\n\n"
+                "  macOS:   brew install poppler\n\n"
+                "  Linux:   sudo apt-get install poppler-utils  (Ubuntu/Debian)\n"
+                "           sudo yum install poppler-utils       (CentOS/RHEL)\n"
+                + "=" * 80
+            )
+            raise RuntimeError(poppler_instructions) from e
+        else:
+            raise RuntimeError(f"Failed to convert PDF to PNG: {error_msg}") from e
+
+    output_paths = []
+
+    for i, page in enumerate(pages, start=1):
+        # Ensure image is in RGB mode (required for some operations)
+        if page.mode != 'RGB':
+            page = page.convert('RGB')
+        
+        # Enhance image for better OCR results
+        try:
+            # 1. Enhance contrast (helps with text clarity)
+            enhancer = ImageEnhance.Contrast(page)
+            page = enhancer.enhance(1.2)  # Increase contrast by 20%
+            
+            # 2. Enhance sharpness (helps with text edge definition)
+            enhancer = ImageEnhance.Sharpness(page)
+            page = enhancer.enhance(1.3)  # Increase sharpness by 30%
+            
+            # 3. Apply slight unsharp mask filter for better text definition
+            page = page.filter(ImageFilter.UnsharpMask(radius=1, percent=150, threshold=3))
+        except Exception as e:
+            # If enhancement fails, continue with original image
+            print(f"Warning: Image enhancement failed for page {i}: {e}")
+        
+        # Generate output path - use same name as PDF but with .png extension for first page
+        if i == 1:
+            output_path = os.path.join(directory, f"{name}.png")
+        else:
+            output_path = os.path.join(directory, f"{name}_page_{i}.png")
+        
+        # Save with high quality settings
+        page.save(output_path, "PNG", optimize=False, compress_level=1)
+        output_paths.append(output_path)
+
+    return output_paths
+
 
 def process_text_file(text_file_path: str, name_expected: str, curp_expected: str = None, dob_expected: str = None) -> Dict:
     """
@@ -672,152 +611,3 @@ def manage_output_file(output_file_path: str, curp_match: bool, name_match: bool
     
     print("=" * 80)
     print()
-
-def process_document(type_document: str, image_path: str, name_expected: str, curp_expected: str = None, dob_expected: str = None) -> Dict:
-    """
-    Main function to process a document and extract CURP and name.
-    
-    Args:
-        type_document: Type of document ("PNG", "PDF", or "JPEG")
-        image_path: Path to the document file
-        name_expected: Expected name for validation
-        curp_expected: Expected CURP/Clave for validation (optional)
-        dob_expected: Expected date of birth in 'DD/MM/YYYY' format (optional)
-        
-    Returns:
-        Dictionary containing:
-            - 'curp': Extracted CURP/Clave (or None)
-            - 'name': Extracted name (or None)
-            - 'dob': Extracted date of birth in 'DD/MM/YYYY' format (or None)
-            - 'name_match': Boolean indicating if extracted name matches expected
-            - 'curp_match': Boolean indicating if extracted CURP matches expected
-            - 'dob_match': Boolean indicating if extracted DOB matches expected
-            - 'timing': Dictionary with timing information
-            - 'success': Boolean indicating overall success
-            - 'error': Error message if any (or None)
-    """
-    total_start = time.perf_counter()
-    timing = {
-        'file_load': 0.0,
-        'ocr': 0.0,
-        'curp_extraction': 0.0,
-        'dob_extraction': 0.0,
-        'name_extraction': 0.0,
-        'total': 0.0
-    }
-    
-    result = {
-        'curp': None,
-        'name': None,
-        'dob': None,
-        'name_match': False,
-        'curp_match': False,
-        'dob_match': False,
-        'timing': timing,
-        'success': False,
-        'error': None
-    }
-    
-    try:
-        # Check Tesseract installation
-        if not check_tesseract_installed():
-            result['error'] = "Tesseract OCR is not installed or not in PATH."
-            result['timing']['total'] = time.perf_counter() - total_start
-            return result
-        
-        # Validate file exists
-        path = Path(image_path)
-        if not path.exists():
-            result['error'] = f"File not found: {image_path}"
-            result['timing']['total'] = time.perf_counter() - total_start
-            return result
-        
-        # Load image based on document type
-        load_start = time.perf_counter()
-        type_doc_upper = type_document.upper()
-        
-        if type_doc_upper == "PDF":
-            image = process_pdf(image_path)
-        elif type_doc_upper in ["PNG", "JPEG", "JPG"]:
-            try:
-                image = Image.open(image_path)
-            except Exception as e:
-                result['error'] = f"Failed to open image file: {e}"
-                result['timing']['total'] = time.perf_counter() - total_start
-                return result
-        else:
-            result['error'] = f"Unsupported document type: {type_document}. Supported types: PNG, PDF, JPEG"
-            result['timing']['total'] = time.perf_counter() - total_start
-            return result
-        
-        timing['file_load'] = time.perf_counter() - load_start
-        
-        # Perform OCR
-        ocr_start = time.perf_counter()
-        try:
-            full_text = ocr_image(image, fast_mode=True)
-        except RuntimeError as e:
-            result['error'] = str(e)
-            result['timing']['total'] = time.perf_counter() - total_start
-            return result
-        except Exception as e:
-            result['error'] = f"OCR failed: {e}"
-            result['timing']['total'] = time.perf_counter() - total_start
-            return result
-        
-        timing['ocr'] = time.perf_counter() - ocr_start
-        
-        # Optionally save OCR output to file for debugging (similar to output.txt)
-        # This helps verify extraction is working with the actual OCR text
-        try:
-            output_file = Path(image_path).parent / "output.txt.txt"
-            with open(output_file, "w", encoding="utf-8") as f:
-                f.write(full_text)
-        except Exception:
-            pass  # Don't fail if we can't write the file
-        
-        # Extract CURP
-        curp_start = time.perf_counter()
-        curp = extract_curp_from_text(full_text, debug=False)  # Disable debug for speed
-        timing['curp_extraction'] = time.perf_counter() - curp_start
-        result['curp'] = curp
-        
-        # Check if CURP matches expected (case-insensitive, normalized)
-        if curp and curp_expected:
-            curp_normalized = curp.upper().strip()
-            expected_normalized = curp_expected.upper().strip()
-            result['curp_match'] = curp_normalized == expected_normalized
-        
-        # Extract DOB from CURP
-        dob_start = time.perf_counter()
-        dob = None
-        if curp:
-            dob = dob_from_curp_str(curp)
-        timing['dob_extraction'] = time.perf_counter() - dob_start
-        result['dob'] = dob
-        
-        # Check if DOB matches expected
-        if dob and dob_expected:
-            result['dob_match'] = dob == dob_expected
-        
-        # Extract name
-        name_start = time.perf_counter()
-        name = extract_name_curp_second_version(full_text)
-        timing['name_extraction'] = time.perf_counter() - name_start
-        result['name'] = name
-        
-        # Check if name matches expected (case-insensitive, normalized)
-        if name and name_expected:
-            name_normalized = _normalize_text(name)
-            expected_normalized = _normalize_text(name_expected)
-            result['name_match'] = name_normalized == expected_normalized
-        
-        # Calculate total time
-        timing['total'] = time.perf_counter() - total_start
-        result['success'] = True
-        
-    except Exception as e:
-        result['error'] = f"Unexpected error: {e}"
-        result['timing']['total'] = time.perf_counter() - total_start
-    
-    return result

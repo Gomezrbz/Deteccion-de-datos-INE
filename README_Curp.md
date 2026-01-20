@@ -29,11 +29,9 @@ pip install -r requirements.txt
 ```
 
 Required packages:
-- `opencv-python`
-- `numpy`
 - `pillow`
 - `pytesseract`
-- `PyMuPDF`
+- `pdf2image`
 
 ### System Dependencies
 
@@ -58,6 +56,27 @@ sudo apt-get install -y tesseract-ocr tesseract-ocr-spa
 **macOS:**
 ```bash
 brew install tesseract tesseract-lang
+```
+
+**Poppler** must be installed for PDF to PNG conversion:
+
+**Windows:**
+1. Download from: https://github.com/oschwartz10612/poppler-windows/releases/
+2. Extract the archive
+3. Add the `bin` folder to your PATH environment variable
+4. Verify installation:
+   ```powershell
+   pdftoppm -h
+   ```
+
+**Linux (Ubuntu/Debian):**
+```bash
+sudo apt-get install poppler-utils
+```
+
+**macOS:**
+```bash
+brew install poppler
 ```
 
 ## Usage
