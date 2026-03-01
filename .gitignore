@@ -2,6 +2,7 @@
 env/
 files/
 __pycache__
+Code_testing/Code/poppler-25.12.0/
 
 # Test data
 data_testing/
@@ -11,3 +12,4 @@ Copy_code/
 # Docs Training
 docs_training/
 testing/Test_Images/
+Code_testing/Test_Data/
