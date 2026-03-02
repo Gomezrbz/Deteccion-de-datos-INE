@@ -1,7 +1,7 @@
 from pdf2image import convert_from_path
 import os
 
-pdf_path = "../Test_Data/pdf/V202311138 ELVIRA VILLASANA VEGA.pdf"
+pdf_path = "../Test_Data/pdf/RAFAEL LOPEZ LINARES.pdf"
 output_dir = "../Test_Data/png"
 
 # Extract filename without extension

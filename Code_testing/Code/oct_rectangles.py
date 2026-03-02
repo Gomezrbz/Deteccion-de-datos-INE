@@ -7,12 +7,17 @@ myconfig = r"--psm 11 -l spa --oem 3"
 
 # Get the directory where this script is located
 script_dir = os.path.dirname(os.path.abspath(__file__))
-image_path = os.path.join(script_dir, 'TEST1.png')
+# Using the nombre_roi image from the Result folder
+image_path = os.path.join(script_dir, '../Test_Data/Result/nombre_roi_RAFAEL LOPEZ LINARES_page_1.png')
 
 img = cv2.imread(image_path)
 
 if img is None:
     raise FileNotFoundError(f"Could not load image '{image_path}'. Please check the file path.")
+
+# Handle grayscale images (convert to BGR for drawing colored rectangles)
+if len(img.shape) == 2:
+    img = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
 
 height, width, _ = img.shape
 
@@ -52,5 +57,12 @@ for i in range(amount_boxes):
             cv2.LINE_AA
         )
 
+# Save the result image with rectangles
+output_path = os.path.join(script_dir, '../Test_Data/Result', f"rectangles_{os.path.basename(image_path)}")
+cv2.imwrite(output_path, img)
+print(f"Image loaded: {image_path}")
+print(f"Result saved: {output_path}")
+
 cv2.imshow("img", img)
 cv2.waitKey(0)
+cv2.destroyAllWindows()
